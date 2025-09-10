@@ -4,7 +4,8 @@ import sqlite3
 import os
 from datetime import datetime
 
-DB_FILE = "seo_tracker.db"
+# Use a new DB file so we start clean
+DB_FILE = "seo_tracker_v2.db"
 
 # ----------------------
 # Database Setup
@@ -13,7 +14,6 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    # Ensure tables exist
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS pages (
             month TEXT,
@@ -24,6 +24,7 @@ def init_db():
             Position REAL
         )
     """)
+    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS queries (
             month TEXT,
@@ -35,23 +36,6 @@ def init_db():
         )
     """)
     
-    # Fix schema mismatch (rename old columns if needed)
-    try:
-        cursor.execute("PRAGMA table_info(pages)")
-        cols = [c[1] for c in cursor.fetchall()]
-        if "Top pages" in cols:
-            cursor.execute('ALTER TABLE pages RENAME COLUMN "Top pages" TO Top_pages')
-    except Exception:
-        pass
-    
-    try:
-        cursor.execute("PRAGMA table_info(queries)")
-        cols = [c[1] for c in cursor.fetchall()]
-        if "Top queries" in cols:
-            cursor.execute('ALTER TABLE queries RENAME COLUMN "Top queries" TO Top_queries')
-    except Exception:
-        pass
-    
     conn.commit()
     conn.close()
 
@@ -59,10 +43,8 @@ def init_db():
 # Data Cleaning
 # ----------------------
 def clean_gsc_data(df):
-    # Clean column names
     df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("%", "", regex=False)
     
-    # Handle CTR
     if "CTR" in df.columns:
         df["CTR"] = df["CTR"].astype(str).str.replace("%", "", regex=False)
         df["CTR"] = pd.to_numeric(df["CTR"], errors="coerce")
@@ -86,7 +68,7 @@ def save_to_db(df, table, month):
         conn.close()
 
 # ----------------------
-# Load from Database with optional month filter
+# Load from Database
 # ----------------------
 def load_data(table, month_filter=None):
     conn = sqlite3.connect(DB_FILE)
@@ -121,7 +103,7 @@ def main():
             else:
                 st.error("File must contain either 'Top pages' or 'Top queries' column.")
 
-    # Pages Data Viewer
+    # Pages Viewer
     if st.checkbox("Show Pages Data"):
         conn = sqlite3.connect(DB_FILE)
         months = pd.read_sql("SELECT DISTINCT month FROM pages", conn)["month"].tolist()
@@ -130,7 +112,7 @@ def main():
         st.subheader("Pages Table")
         st.dataframe(load_data("pages", month_filter))
 
-    # Queries Data Viewer
+    # Queries Viewer
     if st.checkbox("Show Queries Data"):
         conn = sqlite3.connect(DB_FILE)
         months = pd.read_sql("SELECT DISTINCT month FROM queries", conn)["month"].tolist()
