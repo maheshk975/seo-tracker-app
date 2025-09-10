@@ -1,11 +1,9 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-import os
 from datetime import datetime
 
-# Use a new DB file so we start clean
-DB_FILE = "seo_tracker_v2.db"
+DB_FILE = "seo_dashboard.db"
 
 # ----------------------
 # Database Setup
@@ -13,113 +11,145 @@ DB_FILE = "seo_tracker_v2.db"
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS pages (
-            month TEXT,
-            Top_pages TEXT,
-            Clicks INTEGER,
-            Impressions INTEGER,
-            CTR REAL,
-            Position REAL
-        )
-    """)
-    
+
+    # Store keyword performance
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS queries (
+            keyword TEXT,
             month TEXT,
-            Top_queries TEXT,
             Clicks INTEGER,
             Impressions INTEGER,
             CTR REAL,
             Position REAL
         )
     """)
-    
+
+    # Store page performance
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pages (
+            url TEXT,
+            month TEXT,
+            Clicks INTEGER,
+            Impressions INTEGER,
+            CTR REAL,
+            Position REAL
+        )
+    """)
+
+    # Store notes for each keyword
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS notes (
+            keyword TEXT,
+            date TEXT,
+            note TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
 
+
 # ----------------------
-# Data Cleaning
+# Save Uploaded Data
 # ----------------------
-def clean_gsc_data(df):
-    df.columns = df.columns.str.strip().str.replace(" ", "_").str.replace("%", "", regex=False)
-    
+def save_data(df, table, month):
+    conn = sqlite3.connect(DB_FILE)
+    df["month"] = month
+
+    # Clean CTR column
     if "CTR" in df.columns:
         df["CTR"] = df["CTR"].astype(str).str.replace("%", "", regex=False)
         df["CTR"] = pd.to_numeric(df["CTR"], errors="coerce")
-    
-    return df
+
+    df.to_sql(table, conn, if_exists="append", index=False)
+    conn.close()
+
 
 # ----------------------
-# Save to Database
+# Load Data
 # ----------------------
-def save_to_db(df, table, month):
+def load_data(table):
     conn = sqlite3.connect(DB_FILE)
-    df["month"] = month
-    df = clean_gsc_data(df)
-
-    try:
-        df.to_sql(table, conn, if_exists="append", index=False)
-        st.success(f"Saved {len(df)} rows to {table} for {month}")
-    except Exception as e:
-        st.error(f"Error saving to DB: {e}")
-    finally:
-        conn.close()
-
-# ----------------------
-# Load from Database
-# ----------------------
-def load_data(table, month_filter=None):
-    conn = sqlite3.connect(DB_FILE)
-    if month_filter and month_filter != "All":
-        df = pd.read_sql(f"SELECT * FROM {table} WHERE month = ?", conn, params=(month_filter,))
-    else:
-        df = pd.read_sql(f"SELECT * FROM {table}", conn)
+    df = pd.read_sql(f"SELECT * FROM {table}", conn)
     conn.close()
     return df
+
+
+# ----------------------
+# Add Note
+# ----------------------
+def add_note(keyword, note):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO notes (keyword, date, note) VALUES (?, ?, ?)",
+                   (keyword, datetime.now().strftime("%Y-%m-%d"), note))
+    conn.commit()
+    conn.close()
+
+
+def get_notes(keyword):
+    conn = sqlite3.connect(DB_FILE)
+    df = pd.read_sql("SELECT * FROM notes WHERE keyword = ? ORDER BY date DESC", conn, params=(keyword,))
+    conn.close()
+    return df
+
 
 # ----------------------
 # Streamlit App
 # ----------------------
 def main():
-    st.title("📊 SEO Tracker - GSC Data")
+    st.title("📊 SEO Keyword & Page Tracker")
 
     init_db()
 
-    uploaded_file = st.file_uploader("Upload your GSC CSV file (Pages or Queries)", type=["csv"])
-    month = st.text_input("Enter month (e.g., Aug, Sep, 2025)", datetime.now().strftime("%b"))
+    # Upload data
+    uploaded_file = st.file_uploader("Upload GSC CSV (Pages or Queries)", type=["csv"])
+    month = st.text_input("Enter month (e.g., Aug, Sep)", datetime.now().strftime("%b"))
 
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
-        st.write("Preview of Uploaded File:")
-        st.dataframe(df.head())
+        st.write("Preview:", df.head())
 
         if st.button("Save to Database"):
-            if "Top pages" in df.columns:
-                save_to_db(df, "pages", month)
-            elif "Top queries" in df.columns:
-                save_to_db(df, "queries", month)
+            if "Top queries" in df.columns:
+                save_data(df.rename(columns={"Top queries": "keyword"}), "queries", month)
+                st.success("Queries saved.")
+            elif "Top pages" in df.columns:
+                save_data(df.rename(columns={"Top pages": "url"}), "pages", month)
+                st.success("Pages saved.")
             else:
-                st.error("File must contain either 'Top pages' or 'Top queries' column.")
+                st.error("CSV must contain 'Top queries' or 'Top pages'.")
 
-    # Pages Viewer
-    if st.checkbox("Show Pages Data"):
-        conn = sqlite3.connect(DB_FILE)
-        months = pd.read_sql("SELECT DISTINCT month FROM pages", conn)["month"].tolist()
-        conn.close()
-        month_filter = st.selectbox("Filter by Month", ["All"] + months, index=0)
-        st.subheader("Pages Table")
-        st.dataframe(load_data("pages", month_filter))
+    # Keyword Explorer
+    st.subheader("🔑 Keyword Explorer")
+    queries_df = load_data("queries")
+    if not queries_df.empty:
+        keyword_list = sorted(queries_df["keyword"].unique())
+        keyword = st.selectbox("Choose a keyword", keyword_list)
 
-    # Queries Viewer
-    if st.checkbox("Show Queries Data"):
-        conn = sqlite3.connect(DB_FILE)
-        months = pd.read_sql("SELECT DISTINCT month FROM queries", conn)["month"].tolist()
-        conn.close()
-        month_filter = st.selectbox("Filter by Month", ["All"] + months, index=0, key="queries_filter")
-        st.subheader("Queries Table")
-        st.dataframe(load_data("queries", month_filter))
+        # Show history
+        history = queries_df[queries_df["keyword"] == keyword].sort_values("month")
+        st.write("📈 Performance History")
+        st.dataframe(history)
+
+        # Notes section
+        st.write("📝 Notes")
+        note = st.text_area("Add a note")
+        if st.button("Save Note"):
+            add_note(keyword, note)
+            st.success("Note added!")
+
+        notes_df = get_notes(keyword)
+        if not notes_df.empty:
+            st.write("📜 Notes History")
+            st.dataframe(notes_df)
+
+    # Pages Explorer
+    st.subheader("🌐 Pages Explorer")
+    pages_df = load_data("pages")
+    if not pages_df.empty:
+        st.dataframe(pages_df)
+
 
 if __name__ == "__main__":
     main()
