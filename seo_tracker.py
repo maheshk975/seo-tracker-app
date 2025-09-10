@@ -12,6 +12,8 @@ DB_FILE = "seo_tracker.db"
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+    
+    # Ensure tables exist
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS pages (
             month TEXT,
@@ -32,6 +34,24 @@ def init_db():
             Position REAL
         )
     """)
+    
+    # Fix schema mismatch (rename old columns if needed)
+    try:
+        cursor.execute("PRAGMA table_info(pages)")
+        cols = [c[1] for c in cursor.fetchall()]
+        if "Top pages" in cols:
+            cursor.execute('ALTER TABLE pages RENAME COLUMN "Top pages" TO Top_pages')
+    except Exception:
+        pass
+    
+    try:
+        cursor.execute("PRAGMA table_info(queries)")
+        cols = [c[1] for c in cursor.fetchall()]
+        if "Top queries" in cols:
+            cursor.execute('ALTER TABLE queries RENAME COLUMN "Top queries" TO Top_queries')
+    except Exception:
+        pass
+    
     conn.commit()
     conn.close()
 
@@ -66,11 +86,14 @@ def save_to_db(df, table, month):
         conn.close()
 
 # ----------------------
-# Load from Database
+# Load from Database with optional month filter
 # ----------------------
-def load_data(table):
+def load_data(table, month_filter=None):
     conn = sqlite3.connect(DB_FILE)
-    df = pd.read_sql(f"SELECT * FROM {table}", conn)
+    if month_filter and month_filter != "All":
+        df = pd.read_sql(f"SELECT * FROM {table} WHERE month = ?", conn, params=(month_filter,))
+    else:
+        df = pd.read_sql(f"SELECT * FROM {table}", conn)
     conn.close()
     return df
 
@@ -98,13 +121,23 @@ def main():
             else:
                 st.error("File must contain either 'Top pages' or 'Top queries' column.")
 
+    # Pages Data Viewer
     if st.checkbox("Show Pages Data"):
+        conn = sqlite3.connect(DB_FILE)
+        months = pd.read_sql("SELECT DISTINCT month FROM pages", conn)["month"].tolist()
+        conn.close()
+        month_filter = st.selectbox("Filter by Month", ["All"] + months, index=0)
         st.subheader("Pages Table")
-        st.dataframe(load_data("pages"))
+        st.dataframe(load_data("pages", month_filter))
 
+    # Queries Data Viewer
     if st.checkbox("Show Queries Data"):
+        conn = sqlite3.connect(DB_FILE)
+        months = pd.read_sql("SELECT DISTINCT month FROM queries", conn)["month"].tolist()
+        conn.close()
+        month_filter = st.selectbox("Filter by Month", ["All"] + months, index=0, key="queries_filter")
         st.subheader("Queries Table")
-        st.dataframe(load_data("queries"))
+        st.dataframe(load_data("queries", month_filter))
 
 if __name__ == "__main__":
     main()
