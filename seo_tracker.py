@@ -246,7 +246,7 @@ def main():
                     if note_text.strip():
                         add_note(keyword, note_text.strip())
                         st.success("Note added!")
-                        st.experimental_rerun()
+                        st.rerun()
 
     # ----------------------
     # Page Explorer
@@ -289,7 +289,7 @@ def main():
                     for pg in pgs_mult:
                         add_mapping(kw_map, pg)
                     st.success(f"Linked '{kw_map}' to {len(pgs_mult)} page(s).")
-                    st.experimental_rerun()
+                    st.rerun()
 
         with right_col:
             st.write("Link from Page → Keywords")
@@ -300,7 +300,7 @@ def main():
                     for kw in kws_mult:
                         add_mapping(kw, pg_map)
                     st.success(f"Linked '{pg_map}' to {len(kws_mult)} keyword(s).")
-                    st.experimental_rerun()
+                    st.rerun()
     else:
         st.info("Upload both Pages and Queries data to enable mapping.")
 
