@@ -108,4 +108,5 @@ def get_pages_for_keyword(keyword):
 def get_keywords_for_page(url):
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql("SELECT keyword FROM keyword_page_map WHERE url = ?", conn, params=(url,))
-    conn.
+    conn.close()
+
