@@ -112,19 +112,6 @@ def get_keywords_for_page(url):
     return df
 
 # ----------------------
-# Comparison Helper
-# ----------------------
-def color_change(val):
-    """Color numbers: green if positive, red if negative."""
-    if pd.isna(val):
-        return ""
-    if val > 0:
-        return "color: green; font-weight: bold;"
-    elif val < 0:
-        return "color: red; font-weight: bold;"
-    return ""
-
-# ----------------------
 # Streamlit App
 # ----------------------
 def main():
@@ -171,33 +158,41 @@ def main():
         else:
             st.info("No pages linked yet for this keyword.")
 
+        # ----------------------
         # Notes Section
+        # ----------------------
         st.write("📝 Notes")
         notes_df = get_notes(keyword)
+
         if not notes_df.empty:
             notes_df = notes_df.sort_values("date", ascending=False)
 
             # Highlight latest note
             latest_note = notes_df.iloc[0]
             st.markdown(
-                f"""<div style="background-color:#d1fae5; padding:10px; border-radius:8px;">
+                f"""<div style="background-color:#d1fae5; padding:10px; border-radius:8px; margin-bottom:10px;">
                 <b>Latest Note ({latest_note['date']}):</b><br>{latest_note['note']}
                 </div>""",
                 unsafe_allow_html=True
             )
 
-            # Show older notes
-            if len(notes_df) > 1:
-                st.write("📜 Older Notes")
-                st.dataframe(notes_df.iloc[1:], use_container_width=True, height=200)
+            # Show complete notes history with wrapping
+            st.write("📜 All Notes History")
+            st.dataframe(
+                notes_df.style.set_properties(subset=["note"], **{"white-space": "pre-wrap"}),
+                use_container_width=True,
+                height=250
+            )
         else:
             st.info("No notes yet for this keyword.")
 
+        # Input for adding a new note
         note = st.text_area("Add a new note")
         if st.button("Save Note"):
             if note.strip():
                 add_note(keyword, note)
                 st.success("Note added!")
+                st.experimental_rerun()  # refresh to show the updated notes immediately
             else:
                 st.warning("Note cannot be empty.")
 
@@ -233,6 +228,7 @@ def main():
                 for pg in pgs:
                     add_mapping(kw, pg)
                 st.success(f"Linked keyword '{kw}' to pages: {', '.join(pgs)}")
+                st.experimental_rerun()
             else:
                 st.warning("Please select at least one page.")
 
@@ -246,65 +242,9 @@ def main():
                 for kw in kws:
                     add_mapping(kw, pg)
                 st.success(f"Linked page '{pg}' to keywords: {', '.join(kws)}")
+                st.experimental_rerun()
             else:
                 st.warning("Please select at least one keyword.")
-
-    # ----------------------
-    # Comparison Tool
-    # ----------------------
-    st.subheader("📊 Compare Two Months")
-
-    compare_mode = st.radio("Compare for:", ["Keyword", "Page"])
-
-    if compare_mode == "Keyword" and not queries_df.empty:
-        kw = st.selectbox("Select Keyword", sorted(queries_df["keyword"].unique()), key="compare_kw")
-        months = sorted(queries_df["month"].unique())
-        m1 = st.selectbox("Select First Month", months, key="kw_m1")
-        m2 = st.selectbox("Select Second Month", months, key="kw_m2")
-
-        if m1 != m2:
-            df1 = queries_df[(queries_df["keyword"] == kw) & (queries_df["month"] == m1)]
-            df2 = queries_df[(queries_df["keyword"] == kw) & (queries_df["month"] == m2)]
-            if not df1.empty and not df2.empty:
-                comparison = pd.DataFrame({
-                    "Metric": ["Clicks", "Impressions", "CTR", "Position"],
-                    m1: [df1["Clicks"].values[0], df1["Impressions"].values[0], df1["CTR"].values[0], df1["Position"].values[0]],
-                    m2: [df2["Clicks"].values[0], df2["Impressions"].values[0], df2["CTR"].values[0], df2["Position"].values[0]],
-                    "Change": [
-                        df2["Clicks"].values[0] - df1["Clicks"].values[0],
-                        df2["Impressions"].values[0] - df1["Impressions"].values[0],
-                        df2["CTR"].values[0] - df1["CTR"].values[0],
-                        df2["Position"].values[0] - df1["Position"].values[0],
-                    ]
-                })
-                st.dataframe(comparison.style.applymap(color_change, subset=["Change"]), use_container_width=True)
-            else:
-                st.warning("Data not available for one or both months.")
-
-    elif compare_mode == "Page" and not pages_df.empty:
-        pg = st.selectbox("Select Page", sorted(pages_df["url"].unique()), key="compare_pg")
-        months = sorted(pages_df["month"].unique())
-        m1 = st.selectbox("Select First Month", months, key="pg_m1")
-        m2 = st.selectbox("Select Second Month", months, key="pg_m2")
-
-        if m1 != m2:
-            df1 = pages_df[(pages_df["url"] == pg) & (pages_df["month"] == m1)]
-            df2 = pages_df[(pages_df["url"] == pg) & (pages_df["month"] == m2)]
-            if not df1.empty and not df2.empty:
-                comparison = pd.DataFrame({
-                    "Metric": ["Clicks", "Impressions", "CTR", "Position"],
-                    m1: [df1["Clicks"].values[0], df1["Impressions"].values[0], df1["CTR"].values[0], df1["Position"].values[0]],
-                    m2: [df2["Clicks"].values[0], df2["Impressions"].values[0], df2["CTR"].values[0], df2["Position"].values[0]],
-                    "Change": [
-                        df2["Clicks"].values[0] - df1["Clicks"].values[0],
-                        df2["Impressions"].values[0] - df1["Impressions"].values[0],
-                        df2["CTR"].values[0] - df1["CTR"].values[0],
-                        df2["Position"].values[0] - df1["Position"].values[0],
-                    ]
-                })
-                st.dataframe(comparison.style.applymap(color_change, subset=["Change"]), use_container_width=True)
-            else:
-                st.warning("Data not available for one or both months.")
 
 if __name__ == "__main__":
     main()
