@@ -112,6 +112,19 @@ def get_keywords_for_page(url):
     return df
 
 # ----------------------
+# Comparison Helper
+# ----------------------
+def color_change(val):
+    """Color numbers: green if positive, red if negative."""
+    if pd.isna(val):
+        return ""
+    if val > 0:
+        return "color: green; font-weight: bold;"
+    elif val < 0:
+        return "color: red; font-weight: bold;"
+    return ""
+
+# ----------------------
 # Streamlit App
 # ----------------------
 def main():
@@ -149,7 +162,7 @@ def main():
 
         history = queries_df[queries_df["keyword"] == keyword].sort_values("month")
         st.write("📈 Performance History")
-        st.dataframe(history)
+        st.dataframe(history, use_container_width=True)
 
         st.write("🔗 Linked Pages")
         linked_pages = get_pages_for_keyword(keyword)
@@ -158,16 +171,35 @@ def main():
         else:
             st.info("No pages linked yet for this keyword.")
 
+        # Notes Section
         st.write("📝 Notes")
-        note = st.text_area("Add a note")
-        if st.button("Save Note"):
-            add_note(keyword, note)
-            st.success("Note added!")
-
         notes_df = get_notes(keyword)
         if not notes_df.empty:
-            st.write("📜 Notes History")
-            st.dataframe(notes_df)
+            notes_df = notes_df.sort_values("date", ascending=False)
+
+            # Highlight latest note
+            latest_note = notes_df.iloc[0]
+            st.markdown(
+                f"""<div style="background-color:#d1fae5; padding:10px; border-radius:8px;">
+                <b>Latest Note ({latest_note['date']}):</b><br>{latest_note['note']}
+                </div>""",
+                unsafe_allow_html=True
+            )
+
+            # Show older notes
+            if len(notes_df) > 1:
+                st.write("📜 Older Notes")
+                st.dataframe(notes_df.iloc[1:], use_container_width=True, height=200)
+        else:
+            st.info("No notes yet for this keyword.")
+
+        note = st.text_area("Add a new note")
+        if st.button("Save Note"):
+            if note.strip():
+                add_note(keyword, note)
+                st.success("Note added!")
+            else:
+                st.warning("Note cannot be empty.")
 
     # ----------------------
     # Pages Explorer
@@ -179,7 +211,7 @@ def main():
 
         history = pages_df[pages_df["url"] == url].sort_values("month")
         st.write("📈 Performance History")
-        st.dataframe(history)
+        st.dataframe(history, use_container_width=True)
 
         st.write("🔗 Linked Keywords")
         linked_keywords = get_keywords_for_page(url)
@@ -191,10 +223,10 @@ def main():
     # ----------------------
     # Mapping Section
     # ----------------------
-    st.subheader("🔗 Link Keyword to Page")
+    st.subheader("🔗 Link Keyword to Pages")
     if not queries_df.empty and not pages_df.empty:
-        kw = st.selectbox("Select Keyword (searchable)", sorted(queries_df["keyword"].unique()), key="map_kw")
-        pgs = st.multiselect("Select one or more Pages (searchable)", sorted(pages_df["url"].unique()), key="map_pg")
+        kw = st.selectbox("Select Keyword", sorted(queries_df["keyword"].unique()), key="map_kw")
+        pgs = st.multiselect("Select one or more Pages", sorted(pages_df["url"].unique()), key="map_pg")
 
         if st.button("Save Mapping from Keyword → Pages"):
             if pgs:
@@ -206,8 +238,8 @@ def main():
 
     st.subheader("🔗 Link Page to Keywords")
     if not queries_df.empty and not pages_df.empty:
-        pg = st.selectbox("Select Page (searchable)", sorted(pages_df["url"].unique()), key="map_pg_rev")
-        kws = st.multiselect("Select one or more Keywords (searchable)", sorted(queries_df["keyword"].unique()), key="map_kw_rev")
+        pg = st.selectbox("Select Page", sorted(pages_df["url"].unique()), key="map_pg_rev")
+        kws = st.multiselect("Select one or more Keywords", sorted(queries_df["keyword"].unique()), key="map_kw_rev")
 
         if st.button("Save Mapping from Page → Keywords"):
             if kws:
@@ -216,6 +248,63 @@ def main():
                 st.success(f"Linked page '{pg}' to keywords: {', '.join(kws)}")
             else:
                 st.warning("Please select at least one keyword.")
+
+    # ----------------------
+    # Comparison Tool
+    # ----------------------
+    st.subheader("📊 Compare Two Months")
+
+    compare_mode = st.radio("Compare for:", ["Keyword", "Page"])
+
+    if compare_mode == "Keyword" and not queries_df.empty:
+        kw = st.selectbox("Select Keyword", sorted(queries_df["keyword"].unique()), key="compare_kw")
+        months = sorted(queries_df["month"].unique())
+        m1 = st.selectbox("Select First Month", months, key="kw_m1")
+        m2 = st.selectbox("Select Second Month", months, key="kw_m2")
+
+        if m1 != m2:
+            df1 = queries_df[(queries_df["keyword"] == kw) & (queries_df["month"] == m1)]
+            df2 = queries_df[(queries_df["keyword"] == kw) & (queries_df["month"] == m2)]
+            if not df1.empty and not df2.empty:
+                comparison = pd.DataFrame({
+                    "Metric": ["Clicks", "Impressions", "CTR", "Position"],
+                    m1: [df1["Clicks"].values[0], df1["Impressions"].values[0], df1["CTR"].values[0], df1["Position"].values[0]],
+                    m2: [df2["Clicks"].values[0], df2["Impressions"].values[0], df2["CTR"].values[0], df2["Position"].values[0]],
+                    "Change": [
+                        df2["Clicks"].values[0] - df1["Clicks"].values[0],
+                        df2["Impressions"].values[0] - df1["Impressions"].values[0],
+                        df2["CTR"].values[0] - df1["CTR"].values[0],
+                        df2["Position"].values[0] - df1["Position"].values[0],
+                    ]
+                })
+                st.dataframe(comparison.style.applymap(color_change, subset=["Change"]), use_container_width=True)
+            else:
+                st.warning("Data not available for one or both months.")
+
+    elif compare_mode == "Page" and not pages_df.empty:
+        pg = st.selectbox("Select Page", sorted(pages_df["url"].unique()), key="compare_pg")
+        months = sorted(pages_df["month"].unique())
+        m1 = st.selectbox("Select First Month", months, key="pg_m1")
+        m2 = st.selectbox("Select Second Month", months, key="pg_m2")
+
+        if m1 != m2:
+            df1 = pages_df[(pages_df["url"] == pg) & (pages_df["month"] == m1)]
+            df2 = pages_df[(pages_df["url"] == pg) & (pages_df["month"] == m2)]
+            if not df1.empty and not df2.empty:
+                comparison = pd.DataFrame({
+                    "Metric": ["Clicks", "Impressions", "CTR", "Position"],
+                    m1: [df1["Clicks"].values[0], df1["Impressions"].values[0], df1["CTR"].values[0], df1["Position"].values[0]],
+                    m2: [df2["Clicks"].values[0], df2["Impressions"].values[0], df2["CTR"].values[0], df2["Position"].values[0]],
+                    "Change": [
+                        df2["Clicks"].values[0] - df1["Clicks"].values[0],
+                        df2["Impressions"].values[0] - df1["Impressions"].values[0],
+                        df2["CTR"].values[0] - df1["CTR"].values[0],
+                        df2["Position"].values[0] - df1["Position"].values[0],
+                    ]
+                })
+                st.dataframe(comparison.style.applymap(color_change, subset=["Change"]), use_container_width=True)
+            else:
+                st.warning("Data not available for one or both months.")
 
 if __name__ == "__main__":
     main()
